@@ -3,7 +3,7 @@ from pydantic import BaseModel
 import joblib
 import os
 
-app = FastAPI()
+app = FastAPI(title="MLOps Wine Quality Inference API")
 
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 S3_BUCKET = os.environ.get("S3_BUCKET", os.environ.get("CLOUD_BUCKET", ""))
@@ -57,6 +57,17 @@ else:
 
 class PredictRequest(BaseModel):
     features: list[float]
+
+
+@app.get("/")
+def root():
+    """Trang chu huong dan API."""
+    return {
+        "service": "MLOps Wine Quality Prediction API",
+        "health_check": "/health",
+        "api_docs": "/docs",
+        "status": "running"
+    }
 
 
 @app.get("/health")
