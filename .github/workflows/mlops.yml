@@ -199,14 +199,24 @@ jobs:
           VM_USER: ${{ secrets.VM_USER }}
           VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
         run: |
-          if [ -n "$VM_HOST" ] && [ -n "$VM_USER" ] && [ -n "$VM_SSH_KEY" ]; then
-            echo "Deploying to remote EC2 at $VM_HOST via SSH..."
+          CLEAN_HOST=$(echo "$VM_HOST" | tr -d '\r\n ' | sed -e 's|^https*://||' -e 's|/.*$||' -e 's|:.*$||')
+          CLEAN_USER=$(echo "$VM_USER" | tr -d '\r\n ')
+
+          if [ -n "$CLEAN_HOST" ] && [ -n "$CLEAN_USER" ] && [ -n "$VM_SSH_KEY" ]; then
+            echo "Deploying to remote EC2 at '$CLEAN_HOST' via SSH..."
             mkdir -p ~/.ssh
-            echo "$VM_SSH_KEY" > ~/.ssh/deploy_key
+            printf "%s\n" "$VM_SSH_KEY" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
-            ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $VM_USER@$VM_HOST "mkdir -p ~/src ~/models"
-            scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key src/serve.py $VM_USER@$VM_HOST:~/src/serve.py
-            ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $VM_USER@$VM_HOST "sudo systemctl restart mlops-serve && sleep 5 && curl -sf http://localhost:8000/health && echo 'Deploy successfully!'"
+
+            # Wait for SSH port availability with retries
+            for i in {1..10}; do
+              ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -i ~/.ssh/deploy_key $CLEAN_USER@$CLEAN_HOST "echo Connection established" && break || (echo "Retrying SSH connection in 5s..." && sleep 5)
+            done
+
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deploy_key $CLEAN_USER@$CLEAN_HOST "mkdir -p ~/src ~/models"
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deploy_key src/serve.py $CLEAN_USER@$CLEAN_HOST:~/src/serve.py
+            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deploy_key models/model.pkl $CLEAN_USER@$CLEAN_HOST:~/models/model.pkl || true
+            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/deploy_key $CLEAN_USER@$CLEAN_HOST "sudo systemctl restart mlops-serve && sleep 5 && curl -sf http://localhost:8000/health && echo 'Deploy successfully!'"
           else
             echo "Running Local Inference Validation & Smoke Test on FastAPI..."
             mkdir -p ~/models
