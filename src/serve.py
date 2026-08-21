@@ -1,39 +1,47 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from google.cloud import storage
 import joblib
 import os
 
 app = FastAPI()
 
 GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
-GCS_MODEL_KEY = "models/latest/model.pkl"
+S3_BUCKET = os.environ.get("S3_BUCKET", os.environ.get("CLOUD_BUCKET", ""))
+MODEL_KEY = "models/latest/model.pkl"
 MODEL_PATH = os.path.expanduser("~/models/model.pkl")
 
 
 def download_model():
     """
-    Tai file model.pkl tu GCS ve may khi server khoi dong.
-
-    Ham nay duoc goi mot lan khi module duoc import. Su dung
-    GOOGLE_APPLICATION_CREDENTIALS de xac thuc (duoc dat trong systemd service).
+    Tai file model.pkl tu Cloud Storage (AWS S3 / GCP GCS) ve may khi server khoi dong.
     """
+    os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+
+    # 1. Thu tai tu AWS S3 qua boto3
+    if os.environ.get("AWS_ACCESS_KEY_ID") or os.environ.get("AWS_DEFAULT_REGION") or S3_BUCKET:
+        try:
+            import boto3
+            s3 = boto3.client("s3")
+            s3.download_file(S3_BUCKET, MODEL_KEY, MODEL_PATH)
+            print(f"Model da duoc tai xuong tu AWS S3 (s3://{S3_BUCKET}/{MODEL_KEY}).")
+            return
+        except Exception as e:
+            print(f"Khong tai duoc tu S3 ({e}), thu phuong thuc khac...")
+
+    # 2. Thu tai tu Google Cloud Storage
     if GCS_BUCKET:
         try:
-            os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-            # TODO 1: Tao storage.Client()
+            from google.cloud import storage
             client = storage.Client()
-            # TODO 2: Lay bucket va blob tuong ung
             bucket = client.bucket(GCS_BUCKET)
-            blob = bucket.blob(GCS_MODEL_KEY)
-            # TODO 3: Tai file model xuong may
+            blob = bucket.blob(MODEL_KEY)
             blob.download_to_filename(MODEL_PATH)
-            # TODO 4: In thong bao thanh cong
-            print("Model da duoc tai xuong tu GCS.")
+            print(f"Model da duoc tai xuong tu GCS (gs://{GCS_BUCKET}/{MODEL_KEY}).")
+            return
         except Exception as e:
-            print(f"Loi khi tai model tu GCS: {e}")
-    else:
-        print("GCS_BUCKET chua duoc dat, su dung model cuc bo neu co.")
+            print(f"Khong tai duoc tu GCS ({e}).")
+
+    print("Chua cau hinh Cloud bucket hoac khong tai duoc, su dung model cuc bo neu co.")
 
 
 download_model()
@@ -59,7 +67,6 @@ def health():
 
     Tra ve: {"status": "ok"}
     """
-    # TODO 5: Tra ve dict {"status": "ok"}
     return {"status": "ok"}
 
 
@@ -76,7 +83,6 @@ def predict(req: PredictRequest):
         chlorides, free_sulfur_dioxide, total_sulfur_dioxide, density,
         pH, sulphates, alcohol, wine_type
     """
-    # TODO 6: Kiem tra so luong dac trung.
     if len(req.features) != 12:
         raise HTTPException(
             status_code=400,
@@ -89,11 +95,7 @@ def predict(req: PredictRequest):
             detail="Model is not loaded"
         )
 
-    # TODO 7: Goi model.predict([req.features]) de lay ket qua du doan.
     pred = int(model.predict([req.features])[0])
-
-    # TODO 8: Tra ve dict chua "prediction" (int) va "label" (string).
-    # Nhan tuong ung: 0 -> "thap", 1 -> "trung_binh", 2 -> "cao"
     label_map = {0: "thap", 1: "trung_binh", 2: "cao"}
     label = label_map.get(pred, "unknown")
 
