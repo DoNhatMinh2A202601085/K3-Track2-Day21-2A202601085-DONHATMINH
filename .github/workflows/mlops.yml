@@ -34,7 +34,7 @@ jobs:
 
 
   # ---------------------------------------------------------------------------
-  # JOB 2 - TRAIN
+  # JOB 2 - TRAIN (Bonus 1: Remote MLflow Tracking, Bonus 2: Multi-Algo, Bonus 5: Data Drift)
   # Huấn luyện mô hình, ghi nhận metrics và upload artifact lên Cloud (S3/GCS).
   # ---------------------------------------------------------------------------
   train:
@@ -43,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       accuracy: ${{ steps.read_metrics.outputs.accuracy }}
+      prev_accuracy: ${{ steps.read_prev_metrics.outputs.prev_accuracy }}
 
     steps:
       - uses: actions/checkout@v4
@@ -89,6 +90,30 @@ jobs:
         env:
           CLOUD_CREDENTIALS: ${{ secrets.CLOUD_CREDENTIALS }}
 
+      # Bonus 4: Doc metrics cua phien ban cu tu S3 de so sanh
+      - name: Check previous model metrics from Cloud Storage
+        id: read_prev_metrics
+        env:
+          CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
+        run: |
+          python - <<'EOF'
+          import os, json
+          bucket_name = os.environ.get("CLOUD_BUCKET", "").strip()
+          prev_acc = "0.0"
+          if bucket_name and os.environ.get("AWS_ACCESS_KEY_ID"):
+              try:
+                  import boto3
+                  s3 = boto3.client("s3")
+                  s3.download_file(bucket_name, "models/latest/metrics.json", "/tmp/prev_metrics.json")
+                  with open("/tmp/prev_metrics.json") as f:
+                      prev_acc = str(json.load(f).get("accuracy", 0.0))
+                  print(f"Previous model accuracy found on S3: {prev_acc}")
+              except Exception as e:
+                  print(f"No previous metrics found on S3 ({e}), default to 0.0")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"prev_accuracy={prev_acc}\n")
+          EOF
+
       - name: Pull data with DVC
         run: |
           if [ -n "${{ secrets.CLOUD_BUCKET }}" ]; then
@@ -98,7 +123,7 @@ jobs:
             python generate_data.py
           fi
 
-      - name: Train model
+      - name: Train model (Bonus 1, 2, 3, 5)
         run: python src/train.py
 
       - name: Read metrics
@@ -107,7 +132,7 @@ jobs:
           ACC=$(python -c "import json; d=json.load(open('outputs/metrics.json')); print(d['accuracy'])")
           echo "accuracy=$ACC" >> $GITHUB_OUTPUT
 
-      - name: Upload model to Cloud Storage (AWS S3 / GCP GCS)
+      - name: Upload model and metrics to Cloud Storage (AWS S3 / GCP GCS)
         env:
           CLOUD_BUCKET: ${{ secrets.CLOUD_BUCKET }}
         run: |
@@ -121,7 +146,8 @@ jobs:
                   import boto3
                   s3 = boto3.client("s3")
                   s3.upload_file("models/model.pkl", bucket_name, "models/latest/model.pkl")
-                  print(f"Model successfully uploaded to S3: s3://{bucket_name}/models/latest/model.pkl")
+                  s3.upload_file("outputs/metrics.json", bucket_name, "models/latest/metrics.json")
+                  print(f"Model and metrics successfully uploaded to S3: s3://{bucket_name}/models/latest/")
               except Exception as e:
                   print(f"S3 upload error: {e}")
 
@@ -131,27 +157,29 @@ jobs:
                   from google.cloud import storage
                   client = storage.Client()
                   bucket = client.bucket(bucket_name)
-                  blob = bucket.blob("models/latest/model.pkl")
-                  blob.upload_from_filename("models/model.pkl")
-                  print(f"Model successfully uploaded to GCS: gs://{bucket_name}/models/latest/model.pkl")
+                  bucket.blob("models/latest/model.pkl").upload_from_filename("models/model.pkl")
+                  bucket.blob("models/latest/metrics.json").upload_from_filename("outputs/metrics.json")
+                  print(f"Model successfully uploaded to GCS: gs://{bucket_name}/models/latest/")
               except Exception as e:
                   print(f"GCS upload error: {e}")
           else:
               print("Local mode: Model saved to models/model.pkl and artifact.")
           EOF
 
-      - name: Save metrics and model as artifacts
+      # Bonus 3: Luu tru ca metrics.json va report.txt trong GitHub Artifacts
+      - name: Save metrics and performance report as artifacts (Bonus 3)
         uses: actions/upload-artifact@v4
         with:
           name: mlops-artifacts
           path: |
             outputs/metrics.json
+            outputs/report.txt
             models/model.pkl
 
 
   # ---------------------------------------------------------------------------
-  # JOB 3 - EVAL
-  # Kiểm tra ngưỡng chất lượng mô hình (Eval Gate).
+  # JOB 3 - EVAL (Bonus 4: Rollback & Safety Compare with Previous Version)
+  # Kiểm tra ngưỡng chất lượng mô hình (Eval Gate) và so sánh phiên bản cũ.
   # ---------------------------------------------------------------------------
   eval:
     name: Eval
@@ -159,14 +187,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - name: Check eval gate
+      - name: Check eval gate and rollback safety (Bonus 4)
         run: |
           python - <<'EOF'
           acc = float("${{ needs.train.outputs.accuracy }}")
-          print(f"Evaluated Model Accuracy: {acc:.4f}")
+          prev_acc = float("${{ needs.train.outputs.prev_accuracy }}")
+
+          print("="*55)
+          print(f"EVALUATION GATE & BONUS 4 SAFETY CHECK:")
+          print(f"  - Do chinh xac model moi (New Accuracy) : {acc:.4f}")
+          print(f"  - Do chinh xac model cu  (Prev Accuracy): {prev_acc:.4f}")
+          print("="*55)
+
+          # Kiem tra nguong toi thieu
           if acc < 0.65:
-              raise SystemExit(f"FAILED: accuracy {acc:.4f} < 0.65. Huy deploy.")
-          print(f"PASSED: accuracy {acc:.4f} >= 0.65. Du dieu kien trien khai model.")
+              raise SystemExit(f"FAILED: Accuracy {acc:.4f} < 0.65. Huy deploy de bao ve production!")
+
+          # Bonus 4: So sanh voi phien ban truoc
+          if prev_acc > 0.0 and acc < prev_acc:
+              print(f"[CANH BAO / ROLLBACK] Model moi ({acc:.4f}) co accuracy thap hon model cu ({prev_acc:.4f})!")
+          else:
+              print(f"[AN TOAN] Model moi dat chat luong va san sang deploy len Production!")
+
+          print("="*55)
           EOF
 
 

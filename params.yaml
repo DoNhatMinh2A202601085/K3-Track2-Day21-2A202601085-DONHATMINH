@@ -1,4 +1,5 @@
-# Sieu tham so tot nhat duoc chon sau khi thu nghiem MLflow (Buoc 1)
+# Cau hinh sieu tham so va thuat toan (Bonus 2)
+model_type: random_forest
 n_estimators: 200
 max_depth: 20
 min_samples_split: 2

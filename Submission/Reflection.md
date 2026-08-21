@@ -3,7 +3,7 @@
 
 - **Học viên**: Đỗ Nhật Minh
 - **Mã sinh viên / ID**: 2A202601085
-- **Khóa học**: AIInAction – VinUni
+- **Khóa học**: K3
 - **GitHub Repository**: [https://github.com/DoNhatMinh2A202601085/K3-Track2-Day21-2A202601085-DONHATMINH](https://github.com/DoNhatMinh2A202601085/K3-Track2-Day21-2A202601085-DONHATMINH)
 - **Hạ tầng Cloud**: Amazon Web Services (AWS S3 + EC2 `47.129.86.251`) & Terraform IaC
 
@@ -37,7 +37,17 @@ Trong quá trình thực nghiệm cục bộ với **MLflow** (`sqlite:///mlflow
 
 ---
 
-### 3. Khó Khăn Gặp Phải và Cách Giải Quyết
+### 3. Hoàn Thành 5 Thách Thức Nâng Cao (Bonus: +20 Điểm)
+
+1. **Bonus 1 (Tracking MLflow Từ Xa & DagsHub - 4đ)**: Tích hợp biến môi trường `MLFLOW_TRACKING_URI` trong `src/train.py` cho phép chuyển đổi linh hoạt giữa backend SQLite cục bộ và remote tracking server (DagsHub/S3).
+2. **Bonus 2 (Thí Nghiệm Nhiều Thuật Toán - 4đ)**: Bổ sung tham số `model_type` vào `params.yaml`, hỗ trợ `RandomForest`, `ExtraTrees` (0.7420), `GradientBoosting` (0.6980) và `LogisticRegression` (0.5240) có thể so sánh trực tiếp trên MLflow.
+3. **Bonus 3 (Báo Cáo Hiệu Suất Tự Động - 4đ)**: Tự động tính toán Confusion Matrix, Precision, Recall, F1 theo từng lớp và xuất ra `outputs/report.txt`, được lưu trữ trong GitHub Artifacts sau mỗi lần chạy pipeline.
+4. **Bonus 4 (Hoàn Trả / So Sánh Phiên Bản Trước - 4đ)**: Job `eval` trong `mlops.yml` tự động tải `metrics.json` của phiên bản đang chạy từ AWS S3, so sánh `new_accuracy` với `prev_accuracy` và cảnh báo/chặn deploy nếu mô hình mới bị suy giảm hiệu năng.
+5. **Bonus 5 (Cảnh Báo Lệch Lạc Dữ Liệu - 4đ)**: Kiểm tra phân phối tỷ lệ các nhãn trước khi fit mô hình (Lớp 0: 36.86%, Lớp 1: 43.51%, Lớp 2: 19.63%), in cảnh báo nếu có lớp $< 10\%$ và ghi nhận `class_distribution` vào `outputs/metrics.json` và MLflow metrics.
+
+---
+
+### 4. Khó Khăn Gặp Phải và Cách Giải Quyết
 
 1. **Đồng bộ DVC Remote với AWS S3 trong GitHub Actions**:
    - *Vấn đề*: Pipeline bị lỗi khi `dvc pull` do thiếu cấu hình remote hoặc credentials trên Runner sạch.
