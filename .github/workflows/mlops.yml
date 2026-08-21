@@ -70,7 +70,7 @@ jobs:
               if "aws_access_key_id" in data or "AWS_ACCESS_KEY_ID" in data:
                   key_id = data.get("aws_access_key_id") or data.get("AWS_ACCESS_KEY_ID")
                   secret_key = data.get("aws_secret_access_key") or data.get("AWS_SECRET_ACCESS_KEY")
-                  region = data.get("aws_region") or data.get("AWS_DEFAULT_REGION", "us-east-1")
+                  region = data.get("aws_region") or data.get("AWS_DEFAULT_REGION", "ap-southeast-1")
                   with open(os.environ["GITHUB_ENV"], "a") as f:
                       f.write(f"AWS_ACCESS_KEY_ID={key_id}\n")
                       f.write(f"AWS_SECRET_ACCESS_KEY={secret_key}\n")
@@ -200,8 +200,13 @@ jobs:
           VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
         run: |
           if [ -n "$VM_HOST" ] && [ -n "$VM_USER" ] && [ -n "$VM_SSH_KEY" ]; then
-            echo "Deploying to remote VM at $VM_HOST via SSH..."
-            # SSH action execution
+            echo "Deploying to remote EC2 at $VM_HOST via SSH..."
+            mkdir -p ~/.ssh
+            echo "$VM_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $VM_USER@$VM_HOST "mkdir -p ~/src ~/models"
+            scp -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key src/serve.py $VM_USER@$VM_HOST:~/src/serve.py
+            ssh -o StrictHostKeyChecking=no -i ~/.ssh/deploy_key $VM_USER@$VM_HOST "sudo systemctl restart mlops-serve && sleep 5 && curl -sf http://localhost:8000/health && echo 'Deploy successfully!'"
           else
             echo "Running Local Inference Validation & Smoke Test on FastAPI..."
             mkdir -p ~/models
