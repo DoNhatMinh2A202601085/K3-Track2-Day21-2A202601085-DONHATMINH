@@ -6,7 +6,7 @@ import os
 
 app = FastAPI()
 
-GCS_BUCKET = os.environ["GCS_BUCKET"]
+GCS_BUCKET = os.environ.get("GCS_BUCKET", "")
 GCS_MODEL_KEY = "models/latest/model.pkl"
 MODEL_PATH = os.path.expanduser("~/models/model.pkl")
 
@@ -18,24 +18,33 @@ def download_model():
     Ham nay duoc goi mot lan khi module duoc import. Su dung
     GOOGLE_APPLICATION_CREDENTIALS de xac thuc (duoc dat trong systemd service).
     """
-    # TODO 1: Tao storage.Client()
-    # client = storage.Client()
-
-    # TODO 2: Lay bucket va blob tuong ung
-    # bucket = client.bucket(GCS_BUCKET)
-    # blob   = bucket.blob(GCS_MODEL_KEY)
-
-    # TODO 3: Tai file model xuong may
-    # blob.download_to_filename(MODEL_PATH)
-
-    # TODO 4: In thong bao thanh cong
-    # print("Model da duoc tai xuong tu GCS.")
-
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+    if GCS_BUCKET:
+        try:
+            os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+            # TODO 1: Tao storage.Client()
+            client = storage.Client()
+            # TODO 2: Lay bucket va blob tuong ung
+            bucket = client.bucket(GCS_BUCKET)
+            blob = bucket.blob(GCS_MODEL_KEY)
+            # TODO 3: Tai file model xuong may
+            blob.download_to_filename(MODEL_PATH)
+            # TODO 4: In thong bao thanh cong
+            print("Model da duoc tai xuong tu GCS.")
+        except Exception as e:
+            print(f"Loi khi tai model tu GCS: {e}")
+    else:
+        print("GCS_BUCKET chua duoc dat, su dung model cuc bo neu co.")
 
 
 download_model()
-model = joblib.load(MODEL_PATH)
+
+# Load model tu MODEL_PATH hoac fallback models/model.pkl neu MODEL_PATH chua co
+if os.path.exists(MODEL_PATH):
+    model = joblib.load(MODEL_PATH)
+elif os.path.exists("models/model.pkl"):
+    model = joblib.load("models/model.pkl")
+else:
+    model = None
 
 
 class PredictRequest(BaseModel):
@@ -51,7 +60,7 @@ def health():
     Tra ve: {"status": "ok"}
     """
     # TODO 5: Tra ve dict {"status": "ok"}
-    pass  # xoa dong nay sau khi hoan thanh
+    return {"status": "ok"}
 
 
 @app.post("/predict")
@@ -68,16 +77,27 @@ def predict(req: PredictRequest):
         pH, sulphates, alcohol, wine_type
     """
     # TODO 6: Kiem tra so luong dac trung.
-    # Neu len(req.features) != 12, raise HTTPException(status_code=400, ...)
+    if len(req.features) != 12:
+        raise HTTPException(
+            status_code=400,
+            detail="Expected 12 features (wine quality)"
+        )
+
+    if model is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model is not loaded"
+        )
 
     # TODO 7: Goi model.predict([req.features]) de lay ket qua du doan.
-    # pred = model.predict(...)
+    pred = int(model.predict([req.features])[0])
 
     # TODO 8: Tra ve dict chua "prediction" (int) va "label" (string).
     # Nhan tuong ung: 0 -> "thap", 1 -> "trung_binh", 2 -> "cao"
-    # return {"prediction": ..., "label": ...}
+    label_map = {0: "thap", 1: "trung_binh", 2: "cao"}
+    label = label_map.get(pred, "unknown")
 
-    pass  # xoa dong nay sau khi hoan thanh tat ca TODO ben tren
+    return {"prediction": pred, "label": label}
 
 
 if __name__ == "__main__":
