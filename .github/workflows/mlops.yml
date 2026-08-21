@@ -7,6 +7,7 @@ on:
       - 'data/**.dvc'
       - 'src/**.py'
       - 'params.yaml'
+      - '.github/workflows/mlops.yml'
   workflow_dispatch:
 
 jobs:
@@ -60,15 +61,17 @@ jobs:
             echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa-key.json" >> $GITHUB_ENV
             echo "Cloud credentials configured from secrets."
           else
-            echo "CLOUD_CREDENTIALS secret not found. Running with local data setup."
+            echo "CLOUD_CREDENTIALS secret not found. Running in local simulation mode."
           fi
 
       - name: Pull data with DVC
         run: |
           if [ -n "${{ secrets.CLOUD_CREDENTIALS }}" ] && [ -n "${{ secrets.CLOUD_BUCKET }}" ]; then
+            dvc config remote.myremote.url "gs://${{ secrets.CLOUD_BUCKET }}/dvc" || true
+            dvc remote modify myremote credentialpath /tmp/sa-key.json || true
             dvc pull data/train_phase1.csv.dvc data/eval.csv.dvc || python generate_data.py
           else
-            echo "Preparing datasets..."
+            echo "Cloud credentials/bucket not set. Generating dataset files locally..."
             python generate_data.py
           fi
 
